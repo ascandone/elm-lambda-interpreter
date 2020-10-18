@@ -3,7 +3,7 @@ module Main exposing (main)
 import Browser exposing (UrlRequest)
 import Browser.Dom
 import Browser.Events
-import Browser.Navigation exposing (Key)
+import Browser.Navigation as Nav exposing (Key)
 import Dict
 import FeatherIcons
 import Html as H exposing (Html, input)
@@ -16,6 +16,9 @@ import Parser
 import Set exposing (Set)
 import Task
 import Url exposing (Url)
+import Url.Builder
+import Url.Parser exposing ((<?>))
+import Url.Parser.Query as Query
 
 
 
@@ -44,8 +47,8 @@ main =
         , view = view
         , update = update
         , subscriptions = subscriptions
-        , onUrlRequest = onUrlRequest
-        , onUrlChange = onUrlChange
+        , onUrlRequest = UrlRequest
+        , onUrlChange = UrlChange
         }
 
 
@@ -84,31 +87,35 @@ promptId =
 
 type alias Model =
     { prompt : String
-    , reductions : Result ParseError Reductions
+    , reductions : Result ( String, ParseError ) Reductions
     , aliases : List ( String, Lambda )
     , collapsed : Set Int
+    , key : Nav.Key
     }
 
 
+parseTermQuery : Url -> String
+parseTermQuery url =
+    case Url.Parser.parse (Url.Parser.query <| Query.string "term") url of
+        Just (Just t) ->
+            t
+
+        _ ->
+            ""
+
+
 init : Flags -> Url -> Key -> ( Model, Cmd Msg )
-init _ _ _ =
-    ( { prompt = ""
-      , reductions = Ok (Reductions [] Nothing)
-      , aliases = []
-      , collapsed = Set.empty
-      }
+init _ url key =
+    ( Tuple.first <|
+        update ParsePrompt
+            { prompt = parseTermQuery url
+            , reductions = Ok (Reductions [] Nothing)
+            , aliases = []
+            , collapsed = Set.empty
+            , key = key
+            }
     , Cmd.none
     )
-
-
-onUrlRequest : UrlRequest -> Msg
-onUrlRequest _ =
-    Noop
-
-
-onUrlChange : Url -> Msg
-onUrlChange _ =
-    Noop
 
 
 type Msg
@@ -121,14 +128,39 @@ type Msg
     | DeleteAlias String
     | UpdateAlias String
     | ClickedExample String
+    | UrlRequest UrlRequest
+    | UrlChange Url
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        UrlRequest (Browser.Internal url) ->
+            ( Tuple.first <|
+                update ParsePrompt { model | prompt = parseTermQuery url }
+            , Nav.pushUrl model.key (Url.toString url)
+            )
+
+        UrlRequest (Browser.External href) ->
+            ( model
+            , Nav.load href
+            )
+
+        UrlChange url ->
+            ( Tuple.first <|
+                update ParsePrompt { model | prompt = parseTermQuery url }
+            , Cmd.none
+            )
+
         Input s ->
             -- TODO: reductions = Nothing ?
-            ( { model | prompt = s, reductions = Ok (Reductions [] Nothing) }, Cmd.none )
+            ( { model
+                | prompt = s
+
+                --  , reductions = Ok (Reductions [] Nothing)
+              }
+            , Cmd.none
+            )
 
         LoadMore ->
             ( case model.reductions of
@@ -150,26 +182,29 @@ update msg model =
             )
 
         ParsePrompt ->
-            case parse (Dict.fromList model.aliases) model.prompt of
-                Ok (Lambda lambda) ->
-                    update LoadMore
+            ( if String.isEmpty model.prompt then
+                { model | reductions = Ok <| Reductions [] Nothing }
+
+              else
+                case parse (Dict.fromList model.aliases) model.prompt of
+                    Ok (Lambda lambda) ->
+                        Tuple.first <|
+                            update LoadMore
+                                { model
+                                    | reductions = Ok <| Reductions [ ( lambda, Initial ) ] (Just lambda)
+                                    , collapsed = Set.empty
+                                }
+
+                    Ok (Declaration name value) ->
                         { model
-                            | reductions = Ok <| Reductions [ ( lambda, Initial ) ] (Just lambda)
-                            , collapsed = Set.empty
+                            | aliases = ( name, value ) :: (.aliases <| Tuple.first <| update (DeleteAlias name) model)
+                            , prompt = ""
                         }
 
-                Ok (Declaration name value) ->
-                    ( { model
-                        | aliases = ( name, value ) :: (.aliases <| Tuple.first <| update (DeleteAlias name) model)
-                        , prompt = ""
-                      }
-                    , Cmd.none
-                    )
-
-                Err e ->
-                    ( { model | reductions = Err e }
-                    , Cmd.none
-                    )
+                    Err e ->
+                        { model | reductions = Err ( model.prompt, e ) }
+            , Cmd.none
+            )
 
         FocusPrompt ->
             ( model
@@ -346,6 +381,22 @@ viewHelp =
             , viewExample "Let statement" "let K = \\x y. y"
             , viewExample "Using let value" "K a b"
             ]
+        , H.a
+            [ class "cursor-pointer underline block text-blue-700"
+            , A.href <|
+                Url.Builder.toQuery [ Url.Builder.string "term" "\\x y. y" ]
+            ]
+            [ H.text "/?term=\\x y. y" ]
+        , H.a
+            [ class "cursor-pointer underline block text-blue-700"
+            , A.href "/"
+            ]
+            [ H.text "/" ]
+        , H.a
+            [ class "cursor-pointer underline block text-blue-700"
+            , A.href "https://www.google.it"
+            ]
+            [ H.text "google" ]
         , H.div [ class "mt-8" ] []
         , H.h3 [ class "text-gray-600 text-base font-semibold" ] [ H.text "Grammar: (TODO: complete)" ]
         , H.div [ class "mt-2" ] []
@@ -369,8 +420,8 @@ view model =
             , viewPrompt model.prompt
             , H.div [ class "m-4" ] []
             , case model.reductions of
-                Err e ->
-                    viewError model.prompt e
+                Err ( s, e ) ->
+                    viewError s e
 
                 Ok { batch, continuation } ->
                     case batch of
