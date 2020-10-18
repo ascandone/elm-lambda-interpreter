@@ -97,10 +97,8 @@ alias_ =
 
 applications : Parser RawLambda
 applications =
-    succeed RApplication
-        |= applicable
-        |. spaces
-        |= sepBy spaces applicable
+    succeed (\( x, xs ) -> RApplication x xs)
+        |= sepBy1 spaces applicable
 
 
 applicable : Parser RawLambda
@@ -121,12 +119,10 @@ applicable =
 
 abstraction : Parser RawLambda
 abstraction =
-    succeed RAbstraction
+    succeed (\( x, xs ) -> RAbstraction x xs)
         |. oneOf [ symbol "\\", symbol "λ" ]
         |. spaces
-        |= identifier
-        |. spaces
-        |= sepBy spaces identifier
+        |= sepBy1 spaces identifier
         |. symbol "."
         |. spaces
         |= oneOf
@@ -255,8 +251,12 @@ aliasIdentifier =
         }
 
 
-sepBy : Parser a -> Parser b -> Parser (List b)
-sepBy separator term =
+
+-- sepBy1 : Parser a -> Parser b -> Parser (List b)
+
+
+sepBy1 : Parser ignore -> Parser a -> Parser ( a, List a )
+sepBy1 separator term =
     let
         loop reversed =
             oneOf
@@ -266,4 +266,7 @@ sepBy separator term =
                 , succeed <| Done reversed
                 ]
     in
-    Parser.loop [] loop
+    succeed (\x xs -> ( x, xs ))
+        |= term
+        |. separator
+        |= Parser.loop [] loop
