@@ -177,8 +177,19 @@ type ParseResult
     | Declaration String Lambda
 
 
+defaultAliases : List ( String, Lambda )
+defaultAliases =
+    [ ( "True", Abstraction "x" <| Abstraction "_" <| Variable "x" )
+    , ( "False", Abstraction "_" <| Abstraction "x" <| Variable "x" )
+    ]
+
+
 parse : Dict String Lambda -> String -> Result ParseError ParseResult
-parse aliases src =
+parse aliases_ src =
+    let
+        aliases =
+            List.foldr (\( n, t ) -> Dict.insert n t) aliases_ defaultAliases
+    in
     case Parser.run topLevel src of
         Err e ->
             Err <| SyntaxError e

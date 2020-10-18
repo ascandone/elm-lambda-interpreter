@@ -179,8 +179,11 @@ view : Model -> Html Msg
 view model =
     H.div [ class "sm:text-lg max-w-6xl w-full mx-auto  px-2" ]
         [ H.map never viewHeader
-        , H.div [] <|
-            List.map viewDeclaration model.aliases
+        , H.div []
+            (model.aliases
+                |> List.map viewDeclaration
+                |> List.reverse
+            )
         , viewPrompt model.prompt
         , H.div [ class "m-4" ] []
         , case model.reductions of
