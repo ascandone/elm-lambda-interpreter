@@ -26,14 +26,11 @@ import Task
        * animation on "LoadMore"
 
    # Major
-       * prevent aliases
        * sync with url
        * change paths/semantics
 
     # Docs
-        * parsing errors
-        * grammar
-        * aliases
+        * finish grammar
 
 -}
 
@@ -103,6 +100,7 @@ type Msg
     | Noop
     | DeleteAlias String
     | UpdateAlias String
+    | ClickedExample String
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -141,7 +139,10 @@ update msg model =
                         }
 
                 Ok (Declaration name value) ->
-                    ( { model | aliases = ( name, value ) :: model.aliases, prompt = "" }
+                    ( { model
+                        | aliases = ( name, value ) :: (.aliases <| Tuple.first <| update (DeleteAlias name) model)
+                        , prompt = ""
+                      }
                     , Cmd.none
                     )
 
@@ -185,6 +186,12 @@ update msg model =
 
                 Nothing ->
                     ( model, Cmd.none )
+
+        ClickedExample value ->
+            model
+                |> update (Input value)
+                |> Tuple.first
+                |> update ParsePrompt
 
         Noop ->
             ( model, Cmd.none )
@@ -249,9 +256,9 @@ viewError str e =
                     )
     in
     H.div [ class "flex bg-red-100 rounded-md px-3 py-3 m-1" ]
-        [ H.div [ class "self-start rounded-full p-1 bg-red-400 text-red-100" ]
+        [ H.div [ class "self-start rounded-full my-1 p-1 bg-red-400 text-red-100" ]
             [ FeatherIcons.x
-                |> FeatherIcons.withClass "h-4 w-4"
+                |> FeatherIcons.withClass "h-3 w-3"
                 |> FeatherIcons.toHtml []
             ]
         , H.div [ class "mr-3" ] []
@@ -260,6 +267,71 @@ viewError str e =
             , H.div [ class "mt-1" ] []
             , H.div [ class "font-light text-sm" ] body
             ]
+        ]
+
+
+
+-- ε
+-- TODO: complete
+
+
+grammar : String
+grammar =
+    """// Input of prompt
+<input>
+    := <assignment>
+    | <lambda-expr>
+
+// You can perform let bindings
+<assignment>
+    := let <alias-identifier> = <lambda-expr>
+
+<lambda-expr>
+    := <abstraction>
+    | <applications>
+
+<applications>
+    := <identifier>
+
+
+// You can also use "\\" instead of "λ"
+<abstraction>
+    := λ <abstraction-bindings>
+
+<abstraction-bindings>
+    := <identifier> <abstraction-bindings>
+    | <identifier> . <lambda-expr>
+"""
+
+
+viewHelp : Html Msg
+viewHelp =
+    H.div [ class "max-w-4xl mx-auto px-4" ]
+        [ H.div [ class "mt-8" ] []
+        , H.h3 [ class "text-gray-600 text-base font-semibold" ] [ H.text "Examples" ]
+        , H.div [ class "mt-2" ] []
+        , let
+            viewExample name value =
+                H.li []
+                    [ H.text name
+                    , H.text ": "
+                    , H.code
+                        [ class "underline text-blue-500 font-bold cursor-pointer", E.onClick <| ClickedExample value ]
+                        [ H.text value ]
+                    ]
+          in
+          H.ul [ class "text-gray-600 list-disc space-y-1" ]
+            [ viewExample "Identity" "\\x.x"
+            , viewExample "Non-terminating" "(\\x.x x) (\\x. x x)"
+            , viewExample "Let statement" "let K = \\x y. y"
+            , viewExample "Using let value" "K a b"
+            ]
+        , H.div [ class "mt-8" ] []
+        , H.h3 [ class "text-gray-600 text-base font-semibold" ] [ H.text "Grammar: (TODO: complete)" ]
+        , H.div [ class "mt-2" ] []
+        , H.pre
+            [ class "text-gray-600 font-light overflow-x-auto" ]
+            [ H.text grammar ]
         ]
 
 
@@ -280,16 +352,21 @@ view model =
                 viewError model.prompt e
 
             Ok { batch, continuation } ->
-                let
-                    viewReduction_ i r =
-                        H.map ((|>) i) (viewReduction (not <| Set.member i model.collapsed) r)
-                in
-                H.div []
-                    [ H.div [ class "space-y-2" ]
-                        (batch |> List.indexedMap viewReduction_)
-                    , when (continuation /= Nothing) <|
-                        H.div [ class "my-5" ] [ loadBtn ]
-                    ]
+                case batch of
+                    [] ->
+                        viewHelp
+
+                    _ ->
+                        let
+                            viewReduction_ i r =
+                                H.map ((|>) i) (viewReduction (not <| Set.member i model.collapsed) r)
+                        in
+                        H.div []
+                            [ H.div [ class "space-y-2" ]
+                                (batch |> List.indexedMap viewReduction_)
+                            , when (continuation /= Nothing) <|
+                                H.div [ class "my-5" ] [ loadBtn ]
+                            ]
         ]
 
 
