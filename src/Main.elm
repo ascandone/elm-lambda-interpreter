@@ -3,12 +3,13 @@ module Main exposing (main)
 import Browser
 import Browser.Dom
 import Browser.Events
+import Dict
 import FeatherIcons
 import Html as H exposing (Html, input)
 import Html.Attributes as A exposing (class, classList)
 import Html.Events as E
 import Lambda.Ast as Ast exposing (Lambda)
-import Lambda.Parser exposing (ParseError(..), parse)
+import Lambda.Parser exposing (ParseError(..), ParseResult(..), parse)
 import Lambda.Semantics exposing (ReductionType(..), Reductions, reductions)
 import Set exposing (Set)
 import Task
@@ -78,14 +79,16 @@ promptId =
 type alias Model =
     { prompt : String
     , reductions : Result ParseError Reductions
+    , aliases : List ( String, Lambda )
     , collapsed : Set Int
     }
 
 
 init : Model
 init =
-    { prompt = """(λx y.x y) (y y y)"""
+    { prompt = ""
     , reductions = Ok (Reductions [] Nothing)
+    , aliases = []
     , collapsed = Set.empty
     }
 
@@ -104,7 +107,7 @@ update msg model =
     case msg of
         Input s ->
             -- TODO: reductions = Nothing ?
-            ( { model | prompt = s }, Cmd.none )
+            ( { model | prompt = s, reductions = init.reductions }, Cmd.none )
 
         LoadMore ->
             ( case model.reductions of
@@ -126,17 +129,23 @@ update msg model =
             )
 
         ParsePrompt ->
-            ( Tuple.first <|
-                update LoadMore
-                    { model
-                        | reductions =
-                            Result.map
-                                (\t -> Reductions [ ( t, Initial ) ] (Just t))
-                                (parse model.prompt)
-                        , collapsed = Set.empty
-                    }
-            , Task.attempt (\_ -> Noop) (Browser.Dom.blur promptId)
-            )
+            case parse (Dict.fromList model.aliases) model.prompt of
+                Ok (Lambda lambda) ->
+                    update LoadMore
+                        { model
+                            | reductions = Ok <| Reductions [ ( lambda, Initial ) ] (Just lambda)
+                            , collapsed = Set.empty
+                        }
+
+                Ok (Declaration name value) ->
+                    ( { model | aliases = ( name, value ) :: model.aliases, prompt = "" }
+                    , Cmd.none
+                    )
+
+                Err e ->
+                    ( { model | reductions = Err e }
+                    , Cmd.none
+                    )
 
         FocusPrompt ->
             ( model
@@ -170,6 +179,8 @@ view : Model -> Html Msg
 view model =
     H.div [ class "sm:text-lg max-w-6xl w-full mx-auto  px-2" ]
         [ H.map never viewHeader
+        , H.div [] <|
+            List.map viewDeclaration model.aliases
         , viewPrompt model.prompt
         , H.div [ class "m-4" ] []
         , case model.reductions of
@@ -192,9 +203,15 @@ view model =
         ]
 
 
-viewDeclaration : Html msg
-viewDeclaration =
-    H.span [ class "text-gray-600 font-mono font-light" ] [ H.text "let K = \\x y.x" ]
+viewDeclaration : ( String, Lambda ) -> Html msg
+viewDeclaration ( name, value ) =
+    H.div
+        [ class "text-gray-600 font-mono font-light" ]
+        [ H.text "let "
+        , H.text name
+        , H.text " = "
+        , H.text <| Ast.toString value
+        ]
 
 
 viewHeader : Html Never
@@ -300,10 +317,6 @@ viewReduction collapsed ( l, t ) =
         ]
 
 
-
--- [ H.text "Beta reduction of \\x.x and (x y z)" ]
-
-
 loadBtn : Html Msg
 loadBtn =
     H.div [ class "flex justify-center w-full" ]
@@ -326,82 +339,3 @@ when b h =
 
     else
         H.text ""
-
-
-
-{-
-
-
-
-
-   view_ : Model -> Html Msg
-   view_ model =
-       H.div [ class "flex flex-col text-lg text-gray-900 md:flex-row md:full" ]
-           [ -- Left side
-             H.div [ class "flex-1 self-stretch px-4 py-8 h-64" ]
-               [ H.textarea
-                   [ class "h-full -my-1 focus:bg-gray-100  focus:outline-none w-full bg-transparent font-mono resize-none"
-                   , A.autofocus True
-                   , A.value model.input
-                   , E.onInput Input
-                   ]
-                   []
-               ]
-           , H.div [ class "my-4 md:my-0 md:mx-4" ] []
-           , -- Right side
-             H.div [ class "md:h-screen flex-1 overflow-auto px-2 py-2" ] <|
-               case parse model.input of
-                   Ok ast ->
-                       let
-                           ( reductions, loadMore ) =
-                               getReductions model.batchesLimit ast
-                       in
-                       [ H.div [] <| List.map viewStep (( ast, Initial ) :: reductions)
-                       , if loadMore then
-                           H.span [ class "pb-8" ]
-                               [ H.button
-                                   [ class "bg-indigo-100 px-2 py-1 rounded"
-                                   , E.onClick LoadMore
-                                   ]
-                                   [ H.text "Load more" ]
-                               ]
-
-                         else
-                           H.text ""
-                       ]
-
-                   Err e ->
-                       [ H.span [ class "text-red-600 text-md" ]
-                           [ H.text <|
-                               case e of
-                                   SyntaxError deadLines ->
-                                       "Parsing error."
-
-                                   AliasError e1 ->
-                                       "Parsing error."
-                           ]
-                       ]
-           ]
-
--}
-{-
-
-   getReductions : Int -> Lambda -> ( List ( Lambda, ReductionType ), Bool )
-   getReductions batchesLimit lambda =
-       let
-           { batch, continuation } =
-               reductions batchSize lambda
-       in
-       case ( batchesLimit, continuation ) of
-           ( 1, Just _ ) ->
-               ( batch, True )
-
-           ( 1, Nothing ) ->
-               ( batch, False )
-
-           ( _, Just lambda1 ) ->
-               Tuple.mapFirst (List.append batch) (getReductions (batchesLimit - 1) lambda1)
-
-           ( _, Nothing ) ->
-               ( batch, False )
--}

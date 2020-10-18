@@ -1,4 +1,4 @@
-module Lambda.Parser exposing (ParseError(..), parse)
+module Lambda.Parser exposing (ParseError(..), ParseResult(..), parse)
 
 import Dict exposing (Dict)
 import Html exposing (del)
@@ -25,18 +25,6 @@ type RawLambda
     | RApplication RawLambda (List RawLambda)
     | RVariable String
     | Alias String
-
-
-type alias Declaration =
-    { name : String
-    , value : RawLambda
-    }
-
-
-type alias Program =
-    { declarations : List Declaration
-    , expression : RawLambda
-    }
 
 
 unwrapResults : List (Result a b) -> Result a (List b)
@@ -98,24 +86,20 @@ desugarLambda aliases rawLambda =
 --         Dict.union
 --             (Dict.fromList [ ( name, value ) ])
 --             (evaluateDeclarations tl)
-
-
-desugarProgram : Dict String Lambda -> Program -> Result String Lambda
-desugarProgram dict { declarations, expression } =
-    case declarations of
-        [] ->
-            desugarLambda dict expression
-
-        { name, value } :: tl ->
-            case desugarLambda Dict.empty value of
-                Ok lambda ->
-                    desugarProgram (Dict.insert name lambda dict)
-                        { declarations = tl
-                        , expression = expression
-                        }
-
-                (Err _) as e ->
-                    e
+-- desugarLambda : Dict String Lambda -> RawLambda -> Result String Lambda
+-- desugarLambda dict rawLambda =
+--     case declarations of
+--         [] ->
+--             desugarLambda dict rawLambda
+--         { name, value } :: tl ->
+--             case desugarLambda Dict.empty value of
+--                 Ok lambda ->
+--                     desugarLambda (Dict.insert name lambda dict)
+--                         { declarations = tl
+--                         , expression = expression
+--                         }
+--                 (Err _) as e ->
+--                     e
 
 
 variable : Parser RawLambda
@@ -169,32 +153,31 @@ abstraction =
             ]
 
 
-topLevel : Parser RawLambda
-topLevel =
+lambdaTerm : Parser RawLambda
+lambdaTerm =
     succeed identity
         |. spaces
         |= oneOf [ abstraction, applications ]
 
 
-declaration : Parser Declaration
+declaration : Parser RawParseResult
 declaration =
-    succeed Declaration
+    succeed RawDeclaration
         |. Parser.keyword "let"
         |. spaces
         |= aliasIdentifier
         |. spaces
         |. symbol "="
         |. spaces
-        |= topLevel
+        |= lambdaTerm
 
 
-program : Parser Program
-program =
-    succeed Program
-        |= sepBy (symbol "\n") declaration
-        |. chompWhile ((==) '\n')
-        |= topLevel
-        |. Parser.end
+topLevel : Parser RawParseResult
+topLevel =
+    oneOf
+        [ declaration
+        , Parser.map RawLambda lambdaTerm
+        ]
 
 
 type ParseError
@@ -202,17 +185,50 @@ type ParseError
     | AliasError String
 
 
-parse : String -> Result ParseError Lambda
-parse src =
-    case Result.map (desugarProgram Dict.empty) <| Parser.run program src of
-        Ok (Ok s) ->
-            Ok s
+type RawParseResult
+    = RawLambda RawLambda
+    | RawDeclaration String RawLambda
 
-        Ok (Err e) ->
-            Err (AliasError e)
 
-        Err deadEnds ->
-            Err (SyntaxError deadEnds)
+type ParseResult
+    = Lambda Lambda
+    | Declaration String Lambda
+
+
+parse : Dict String Lambda -> String -> Result ParseError ParseResult
+parse aliases src =
+    case Parser.run topLevel src of
+        Err e ->
+            Err <| SyntaxError e
+
+        Ok (RawLambda rawLambda) ->
+            case desugarLambda aliases rawLambda of
+                Err e ->
+                    Err <| AliasError e
+
+                Ok lambda ->
+                    Ok <| Lambda lambda
+
+        Ok (RawDeclaration name value) ->
+            case desugarLambda aliases value of
+                Err e ->
+                    Err <| AliasError e
+
+                Ok lambda ->
+                    Ok <| Declaration name lambda
+
+
+
+-- RawLambda _ ->
+--     Debug.todo "rawLambda"
+-- RawDeclaration name expr ->
+--     Debug.todo "rawLambda"
+-- Ok (Ok s) ->
+--     Ok s
+-- Ok (Err e) ->
+--     Err (AliasError e)
+-- Err deadEnds ->
+--     Err (SyntaxError deadEnds)
 
 
 reserved : Set.Set String
