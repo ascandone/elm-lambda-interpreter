@@ -337,14 +337,13 @@ viewHelp =
 
 view : Model -> Html Msg
 view model =
-    H.div [ class "max-w-6xl w-full mx-auto  px-2" ]
-        [ H.div [ class "mt-4" ] []
-        , H.div [ class "space-y-4" ]
-            (model.aliases
-                |> List.map viewDeclaration
-                |> List.reverse
-            )
-        , H.div [ class "m-4" ] []
+    H.div [ class "max-w-6xl w-full mx-auto px-2 py-6" ]
+        [ when (not <| List.isEmpty model.aliases) <|
+            H.div [ class "space-y-4 pb-4" ]
+                (model.aliases
+                    |> List.map viewDeclaration
+                    |> List.reverse
+                )
         , viewPrompt model.prompt
         , H.div [ class "m-4" ] []
         , case model.reductions of
