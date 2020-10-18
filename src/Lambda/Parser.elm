@@ -74,7 +74,7 @@ desugarLambda aliases rawLambda =
                     Ok s_
 
                 Nothing ->
-                    Err <| "Alias not found: " ++ s
+                    Err <| s
 
 
 variable : Parser RawLambda
@@ -156,10 +156,12 @@ declaration =
 
 topLevel : Parser RawParseResult
 topLevel =
-    oneOf
-        [ declaration
-        , Parser.map RawLambda lambdaTerm
-        ]
+    succeed identity
+        |= oneOf
+            [ declaration
+            , Parser.map RawLambda lambdaTerm
+            ]
+        |. Parser.end
 
 
 type ParseError
@@ -209,19 +211,6 @@ parse aliases_ src =
 
                 Ok lambda ->
                     Ok <| Declaration name lambda
-
-
-
--- RawLambda _ ->
---     Debug.todo "rawLambda"
--- RawDeclaration name expr ->
---     Debug.todo "rawLambda"
--- Ok (Ok s) ->
---     Ok s
--- Ok (Err e) ->
---     Err (AliasError e)
--- Err deadEnds ->
---     Err (SyntaxError deadEnds)
 
 
 reserved : Set.Set String

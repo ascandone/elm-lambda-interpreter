@@ -1,16 +1,24 @@
-const tw = require('tailwindcss')
+const config = require('tailwindcss/defaultConfig')
 
 module.exports = {
   future: {
     removeDeprecatedGapUtilities: true,
     purgeLayersByDefault: true,
   },
-  purge: [],
+  purge: ['src/index.html', 'src/Main.elm'],
   theme: {
+    fontFamily: {
+      sans: ['Inter', config.theme.fontFamily.sans],
+      mono: ['Roboto mono', ...config.theme.fontFamily.mono],
+      serif: config.theme.fontFamily.serif,
+    },
     extend: {},
   },
   variants: {
-    display: ['group-hover', ...tw.variants.display],
+    textColor: ['group-hover', ...config.variants.textColor],
   },
-  plugins: [],
+  plugins: [
+    //
+    require('@tailwindcss/ui/'),
+  ],
 }

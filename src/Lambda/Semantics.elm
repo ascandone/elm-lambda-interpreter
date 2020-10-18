@@ -91,7 +91,8 @@ subst from to term =
                             ( Abstraction newBinding result, Just ( term, Abstraction newBinding result ) )
 
                         ( result, _ ) ->
-                            Debug.todo "this should crash"
+                            -- This should never be executed (TODO: proof)
+                            ( result, Nothing )
 
 
 type ReductionType

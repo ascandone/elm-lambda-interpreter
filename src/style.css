@@ -3,3 +3,7 @@
 @tailwind components;
 
 @tailwind utilities;
+
+.wavy {
+  text-decoration-style: wavy;
+}

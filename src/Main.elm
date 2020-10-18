@@ -11,6 +11,7 @@ import Html.Events as E
 import Lambda.Ast as Ast exposing (Lambda)
 import Lambda.Parser exposing (ParseError(..), ParseResult(..), parse)
 import Lambda.Semantics exposing (ReductionType(..), Reductions, reductions)
+import Parser
 import Set exposing (Set)
 import Task
 
@@ -25,7 +26,7 @@ import Task
        * animation on "LoadMore"
 
    # Major
-       * aliases
+       * prevent aliases
        * sync with url
        * change paths/semantics
 
@@ -193,10 +194,79 @@ update msg model =
 -- View
 
 
+problemToString : Parser.Problem -> String
+problemToString p =
+    case p of
+        Parser.ExpectingKeyword k ->
+            "The keyword: " ++ "\"" ++ k ++ "\""
+
+        Parser.ExpectingSymbol s ->
+            "The symbol: " ++ "\"" ++ s ++ "\""
+
+        Parser.ExpectingVariable ->
+            "A variable"
+
+        Parser.ExpectingInt ->
+            "An integer"
+
+        _ ->
+            --  Debug.toString p
+            "Something else"
+
+
+viewError : String -> ParseError -> Html a
+viewError str e =
+    let
+        ( header, body ) =
+            case e of
+                AliasError a ->
+                    ( "Alias not found"
+                    , [ H.p []
+                            [ H.text <| "The alias \""
+                            , H.span [ class "font-bold" ] [ H.text a ]
+                            , H.text "\" was not found."
+                            ]
+                      ]
+                    )
+
+                SyntaxError deadLines ->
+                    let
+                        viewDeadline : Parser.DeadEnd -> List (Html msg)
+                        viewDeadline { col, problem } =
+                            [ H.text <| problemToString problem ++ " at: \""
+                            , H.pre [ class "inline" ]
+                                [ H.span [ class "font-light" ] [ H.text (String.slice 0 (col - 1) str) ]
+                                , H.span [ class "underline wavy font-bold" ] [ H.text (String.slice (col - 1) 9999 str) ]
+                                ]
+                            , H.text "\""
+                            ]
+                    in
+                    ( "Syntax error"
+                    , [ H.p [] [ H.text <| "There was a syntax error." ]
+                      , H.p [] [ H.text <| "I was expecting one of these:" ]
+                      , H.ul [] (deadLines |> List.map (viewDeadline >> H.li [ class "list-disc list-inside" ]))
+                      ]
+                    )
+    in
+    H.div [ class "flex bg-red-100 rounded-md px-3 py-3 m-1" ]
+        [ H.div [ class "self-start rounded-full p-1 bg-red-400 text-red-100" ]
+            [ FeatherIcons.x
+                |> FeatherIcons.withClass "h-4 w-4"
+                |> FeatherIcons.toHtml []
+            ]
+        , H.div [ class "mr-3" ] []
+        , H.div [ class "flex flex-col text-red-600" ]
+            [ H.h1 [ class "font-semibold" ] [ H.text header ]
+            , H.div [ class "mt-1" ] []
+            , H.div [ class "font-light text-sm" ] body
+            ]
+        ]
+
+
 view : Model -> Html Msg
 view model =
-    H.div [ class "sm:text-lg max-w-6xl w-full mx-auto  px-2" ]
-        [ H.map never viewHeader
+    H.div [ class "max-w-6xl w-full mx-auto  px-2" ]
+        [ H.div [ class "mt-4" ] []
         , H.div [ class "space-y-4" ]
             (model.aliases
                 |> List.map viewDeclaration
@@ -207,15 +277,7 @@ view model =
         , H.div [ class "m-4" ] []
         , case model.reductions of
             Err e ->
-                H.div [ class "text-red-600 text-center p-4" ]
-                    [ H.text <|
-                        case e of
-                            AliasError a ->
-                                "Alias not found: " ++ a
-
-                            SyntaxError _ ->
-                                "Syntax error"
-                    ]
+                viewError model.prompt e
 
             Ok { batch, continuation } ->
                 let
@@ -224,9 +286,7 @@ view model =
                 in
                 H.div []
                     [ H.div [ class "space-y-2" ]
-                        (batch
-                            |> List.indexedMap viewReduction_
-                        )
+                        (batch |> List.indexedMap viewReduction_)
                     , when (continuation /= Nothing) <|
                         H.div [ class "my-5" ] [ loadBtn ]
                     ]
@@ -235,28 +295,28 @@ view model =
 
 viewDeclaration : ( String, Lambda ) -> Html Msg
 viewDeclaration ( name, value ) =
-    H.div [ class "flex items-center group" ]
+    H.div [ class "flex items-center group", E.onDoubleClick <| UpdateAlias name ]
         [ H.div
-            [ class "flex-1 xl:flex-none ml-2 text-gray-600 font-mono font-light" ]
+            [ class "flex-1 xl:flex-none ml-2 text-gray-400 font-mono font-light" ]
             [ H.text "let "
             , H.span [ class "text-gray-800 font-bold" ] [ H.text name ]
             , H.text " = "
-            , H.span [ class "text-gray-700" ] [ H.text <| Ast.toString value ]
+            , H.span [ class "text-gray-800" ] [ H.text <| Ast.toString value ]
             ]
-        , H.div [ class "xl:mr-5" ] []
-        , FeatherIcons.edit
-            |> FeatherIcons.withClass "h-5 text-gray-800 cursor-pointer"
+        , H.div [ class "xl:mr-8" ] []
+        , FeatherIcons.edit2
+            |> FeatherIcons.withClass "h-5 text-gray-700 md:text-gray-400 group-hover:text-gray-700 cursor-pointer  "
             |> FeatherIcons.toHtml [ E.onClick <| UpdateAlias name ]
         , H.div [ class "mr-2" ] []
-        , FeatherIcons.trash2
-            |> FeatherIcons.withClass "h-5 text-red-600 cursor-pointer"
+        , FeatherIcons.trash
+            |> FeatherIcons.withClass "h-5 text-red-600 md:text-red-300 group-hover:text-red-600 cursor-pointer  group-hover:block"
             |> FeatherIcons.toHtml [ E.onClick <| DeleteAlias name ]
         ]
 
 
 viewHeader : Html Never
 viewHeader =
-    H.div [ class "max-w-2xl text-base mx-auto" ]
+    H.div [ class "max-w-2xl text-base mx-auto px-2" ]
         [ H.div [ class "mt-2" ] []
         , H.h1 [ class "text-4xl font-semibold" ] [ H.text "Lambda calculus interpreter" ]
         , H.div [ class "mt-2" ] []
@@ -268,7 +328,7 @@ viewHeader =
 viewReductionIcon : String -> Html msg
 viewReductionIcon str =
     H.span
-        [ class "px-2 sm:px-3 py-2 text-gray-500 font-light text-right" ]
+        [ class "px-2 sm:px-3 py-2 text-gray-400 font-light text-right" ]
         [ H.text str ]
 
 
@@ -289,7 +349,7 @@ viewPrompt value =
                 [ A.value value
                 , A.id promptId
                 , E.onInput Input
-                , class "w-full text-gray-800 flex-1 bg-transparent leading-none py-2 px-2 bg-gray-200 rounded"
+                , class "w-full text-gray-800 flex-1 bg-transparent leading-none py-2 px-2 bg-cool-gray-100 rounded"
                 , class "focus:outline-none focus:shadow-outline focus:border-blue-300"
                 , A.placeholder "Enter lambda term. (\"/\" to focus)"
                 , A.autofocus True
@@ -361,7 +421,7 @@ loadBtn : Html Msg
 loadBtn =
     H.div [ class "flex justify-center w-full" ]
         [ H.button
-            [ class "text-gray-800 bg-pink-100 rounded px-4 py-3 leading-none tracking-wide font-light "
+            [ class "text-gray-800 bg-indigo-100 rounded shadow px-4 py-3 leading-none tracking-wide"
             , E.onClick LoadMore
             ]
             [ H.text "Load more" ]
