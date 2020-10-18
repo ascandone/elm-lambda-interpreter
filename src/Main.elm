@@ -184,8 +184,16 @@ view model =
         , viewPrompt model.prompt
         , H.div [ class "m-4" ] []
         , case model.reductions of
-            Err _ ->
-                H.div [ class "text-red-600 text-center p-4" ] [ H.text "Parsing error" ]
+            Err e ->
+                H.div [ class "text-red-600 text-center p-4" ]
+                    [ H.text <|
+                        case e of
+                            AliasError a ->
+                                "Alias not found: " ++ a
+
+                            SyntaxError _ ->
+                                "Syntax error"
+                    ]
 
             Ok { batch, continuation } ->
                 let
@@ -274,7 +282,7 @@ viewReduction collapsed ( l, t ) =
                         "β"
 
                     Initial ->
-                        "."
+                        "λ"
             , H.span
                 [ class "text-gray-800 flex-1 leading-none" ]
                 [ H.text <| Ast.toString l ]

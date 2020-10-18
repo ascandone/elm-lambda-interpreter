@@ -25,6 +25,7 @@ type RawLambda
     | RApplication RawLambda (List RawLambda)
     | RVariable String
     | Alias String
+    | Num Int
 
 
 unwrapResults : List (Result a b) -> Result a (List b)
@@ -35,6 +36,20 @@ unwrapResults =
 desugarLambda : Dict String Lambda -> RawLambda -> Result String Lambda
 desugarLambda aliases rawLambda =
     case rawLambda of
+        Num n ->
+            let
+                ( f, x ) =
+                    ( "f", "x" )
+
+                helper n_ acc =
+                    if n_ <= 0 then
+                        acc
+
+                    else
+                        Application (Variable f) (helper (n_ - 1) acc)
+            in
+            Ok <| Abstraction f <| Abstraction x <| helper n (Variable x)
+
         RAbstraction x xs body ->
             desugarLambda aliases body
                 |> Result.map (\body_ -> Abstraction x <| List.foldl Abstraction body_ xs)
@@ -62,50 +77,16 @@ desugarLambda aliases rawLambda =
                     Err <| "Alias not found: " ++ s
 
 
-
-{-
-
-   Id := \x.x
-   K := \y _.y
-   E := Id (\x.x)
-
-   Id K E
--}
--- evaluateDeclarations : List Declaration -> Result String (Dict String RawLambda)
--- evaluateDeclarations =
---     List.map (desugarLambda Dict.empty)
--- List.foldr
---     (\{ name, value } rest ->
---         Dict.insert name (desugarLambda rest value) rest
---     )
---     (Ok (Dict.fromList []))
--- case declarations of
---     [] ->
---         Dict.fromList []
---     { name, value } :: tl ->
---         Dict.union
---             (Dict.fromList [ ( name, value ) ])
---             (evaluateDeclarations tl)
--- desugarLambda : Dict String Lambda -> RawLambda -> Result String Lambda
--- desugarLambda dict rawLambda =
---     case declarations of
---         [] ->
---             desugarLambda dict rawLambda
---         { name, value } :: tl ->
---             case desugarLambda Dict.empty value of
---                 Ok lambda ->
---                     desugarLambda (Dict.insert name lambda dict)
---                         { declarations = tl
---                         , expression = expression
---                         }
---                 (Err _) as e ->
---                     e
-
-
 variable : Parser RawLambda
 variable =
     succeed RVariable
         |= identifier
+
+
+num : Parser RawLambda
+num =
+    succeed Num
+        |= Parser.int
 
 
 alias_ : Parser RawLambda
@@ -126,6 +107,7 @@ applicable : Parser RawLambda
 applicable =
     oneOf
         [ variable
+        , num
         , alias_
         , parenthesized <|
             Parser.lazy <|
