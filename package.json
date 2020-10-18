@@ -11,7 +11,10 @@
     "parcel-bundler": "^1.12.4"
   },
   "devDependencies": {
+    "autoprefixer": "^10.0.1",
     "elm-hot": "^1.1.5",
-    "node-elm-compiler": "^5.0.5"
+    "node-elm-compiler": "^5.0.5",
+    "postcss": "^8.1.0",
+    "tailwindcss": "^1.9.4"
   }
 }

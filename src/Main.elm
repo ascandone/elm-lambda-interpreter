@@ -100,6 +100,8 @@ type Msg
     | ToggleCollapse Int
     | FocusPrompt
     | Noop
+    | DeleteAlias String
+    | UpdateAlias String
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -167,6 +169,22 @@ update msg model =
             , Cmd.none
             )
 
+        DeleteAlias name ->
+            ( { model | aliases = List.filter (\( n, _ ) -> n /= name) model.aliases }
+            , Cmd.none
+            )
+
+        UpdateAlias name ->
+            case List.head (List.filter (\( n, _ ) -> n == name) model.aliases) of
+                Just ( _, value ) ->
+                    { model | prompt = "let " ++ name ++ " = " ++ Ast.toString value }
+                        |> update (DeleteAlias name)
+                        |> Tuple.first
+                        |> update FocusPrompt
+
+                Nothing ->
+                    ( model, Cmd.none )
+
         Noop ->
             ( model, Cmd.none )
 
@@ -179,11 +197,12 @@ view : Model -> Html Msg
 view model =
     H.div [ class "sm:text-lg max-w-6xl w-full mx-auto  px-2" ]
         [ H.map never viewHeader
-        , H.div []
+        , H.div [ class "space-y-4" ]
             (model.aliases
                 |> List.map viewDeclaration
                 |> List.reverse
             )
+        , H.div [ class "m-4" ] []
         , viewPrompt model.prompt
         , H.div [ class "m-4" ] []
         , case model.reductions of
@@ -214,14 +233,24 @@ view model =
         ]
 
 
-viewDeclaration : ( String, Lambda ) -> Html msg
+viewDeclaration : ( String, Lambda ) -> Html Msg
 viewDeclaration ( name, value ) =
-    H.div
-        [ class "text-gray-600 font-mono font-light" ]
-        [ H.text "let "
-        , H.text name
-        , H.text " = "
-        , H.text <| Ast.toString value
+    H.div [ class "flex items-center group" ]
+        [ H.div
+            [ class "flex-1 xl:flex-none ml-2 text-gray-600 font-mono font-light" ]
+            [ H.text "let "
+            , H.span [ class "text-gray-800 font-bold" ] [ H.text name ]
+            , H.text " = "
+            , H.span [ class "text-gray-700" ] [ H.text <| Ast.toString value ]
+            ]
+        , H.div [ class "xl:mr-5" ] []
+        , FeatherIcons.edit
+            |> FeatherIcons.withClass "h-5 text-gray-800 cursor-pointer"
+            |> FeatherIcons.toHtml [ E.onClick <| UpdateAlias name ]
+        , H.div [ class "mr-2" ] []
+        , FeatherIcons.trash2
+            |> FeatherIcons.withClass "h-5 text-red-600 cursor-pointer"
+            |> FeatherIcons.toHtml [ E.onClick <| DeleteAlias name ]
         ]
 
 
