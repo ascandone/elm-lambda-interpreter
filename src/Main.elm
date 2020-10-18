@@ -1,8 +1,9 @@
 module Main exposing (main)
 
-import Browser
+import Browser exposing (UrlRequest)
 import Browser.Dom
 import Browser.Events
+import Browser.Navigation exposing (Key)
 import Dict
 import FeatherIcons
 import Html as H exposing (Html, input)
@@ -14,6 +15,7 @@ import Lambda.Semantics exposing (ReductionType(..), Reductions, reductions)
 import Parser
 import Set exposing (Set)
 import Task
+import Url exposing (Url)
 
 
 
@@ -35,14 +37,20 @@ import Task
 -}
 
 
-main : Program () Model Msg
+main : Program Flags Model Msg
 main =
-    Browser.element
-        { init = \_ -> ( init, Cmd.none )
+    Browser.application
+        { init = init
         , view = view
         , update = update
         , subscriptions = subscriptions
+        , onUrlRequest = onUrlRequest
+        , onUrlChange = onUrlChange
         }
+
+
+type alias Flags =
+    ()
 
 
 onSlashPress : Sub Msg
@@ -82,13 +90,25 @@ type alias Model =
     }
 
 
-init : Model
-init =
-    { prompt = ""
-    , reductions = Ok (Reductions [] Nothing)
-    , aliases = []
-    , collapsed = Set.empty
-    }
+init : Flags -> Url -> Key -> ( Model, Cmd Msg )
+init _ _ _ =
+    ( { prompt = ""
+      , reductions = Ok (Reductions [] Nothing)
+      , aliases = []
+      , collapsed = Set.empty
+      }
+    , Cmd.none
+    )
+
+
+onUrlRequest : UrlRequest -> Msg
+onUrlRequest _ =
+    Noop
+
+
+onUrlChange : Url -> Msg
+onUrlChange _ =
+    Noop
 
 
 type Msg
@@ -108,7 +128,7 @@ update msg model =
     case msg of
         Input s ->
             -- TODO: reductions = Nothing ?
-            ( { model | prompt = s, reductions = init.reductions }, Cmd.none )
+            ( { model | prompt = s, reductions = Ok (Reductions [] Nothing) }, Cmd.none )
 
         LoadMore ->
             ( case model.reductions of
@@ -335,38 +355,42 @@ viewHelp =
         ]
 
 
-view : Model -> Html Msg
+view : Model -> Browser.Document Msg
 view model =
-    H.div [ class "max-w-6xl w-full mx-auto px-2 py-6" ]
-        [ when (not <| List.isEmpty model.aliases) <|
-            H.div [ class "space-y-4 pb-4" ]
-                (model.aliases
-                    |> List.map viewDeclaration
-                    |> List.reverse
-                )
-        , viewPrompt model.prompt
-        , H.div [ class "m-4" ] []
-        , case model.reductions of
-            Err e ->
-                viewError model.prompt e
+    { title = "Lambda calculus interpreter"
+    , body =
+        [ H.div [ class "max-w-6xl w-full mx-auto px-2 py-6" ]
+            [ when (not <| List.isEmpty model.aliases) <|
+                H.div [ class "space-y-4 pb-4" ]
+                    (model.aliases
+                        |> List.map viewDeclaration
+                        |> List.reverse
+                    )
+            , viewPrompt model.prompt
+            , H.div [ class "m-4" ] []
+            , case model.reductions of
+                Err e ->
+                    viewError model.prompt e
 
-            Ok { batch, continuation } ->
-                case batch of
-                    [] ->
-                        viewHelp
+                Ok { batch, continuation } ->
+                    case batch of
+                        [] ->
+                            viewHelp
 
-                    _ ->
-                        let
-                            viewReduction_ i r =
-                                H.map ((|>) i) (viewReduction (not <| Set.member i model.collapsed) r)
-                        in
-                        H.div []
-                            [ H.div [ class "space-y-2" ]
-                                (batch |> List.indexedMap viewReduction_)
-                            , when (continuation /= Nothing) <|
-                                H.div [ class "my-5" ] [ loadBtn ]
-                            ]
+                        _ ->
+                            let
+                                viewReduction_ i r =
+                                    H.map ((|>) i) (viewReduction (not <| Set.member i model.collapsed) r)
+                            in
+                            H.div []
+                                [ H.div [ class "space-y-2" ]
+                                    (batch |> List.indexedMap viewReduction_)
+                                , when (continuation /= Nothing) <|
+                                    H.div [ class "my-5" ] [ loadBtn ]
+                                ]
+            ]
         ]
+    }
 
 
 viewDeclaration : ( String, Lambda ) -> Html Msg
