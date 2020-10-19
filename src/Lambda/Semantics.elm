@@ -109,7 +109,7 @@ type alias Reductions =
 reductions : Int -> Lambda -> Reductions
 reductions limit lambda =
     if limit <= 0 then
-        ( [], Nothing )
+        ( [], Just lambda )
 
     else
         case reduction lambda of
