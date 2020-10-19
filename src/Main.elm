@@ -14,6 +14,7 @@ import Lambda.Ast as Ast exposing (Lambda)
 import Lambda.Parser exposing (ParseError(..), ParseResult(..), parse)
 import Lambda.Semantics exposing (ReductionType(..), Reductions, reductions)
 import Parser
+import Ports
 import Set exposing (Set)
 import Task
 import Url exposing (Url)
@@ -27,8 +28,7 @@ import Url.Parser.Query as Query
       TODO:
 
    # Minor
-       * preventDefault in key shortcut
-       * optimizations
+       * key shortcut
        * animation on "LoadMore"
 
    # Major
@@ -44,7 +44,7 @@ main : Program Flags Model Msg
 main =
     Browser.application
         { init = init
-        , view = view
+        , view = viewDocument
         , update = update
         , subscriptions = subscriptions
         , onUrlRequest = UrlRequest
@@ -56,33 +56,9 @@ type alias Flags =
     ()
 
 
-onSlashPress : Sub Msg
-onSlashPress =
-    Browser.Events.onKeyPress E.keyCode
-        |> Sub.map
-            (\i ->
-                case i of
-                    47 ->
-                        FocusPrompt
-
-                    _ ->
-                        Noop
-            )
-
-
 subscriptions : Model -> Sub Msg
 subscriptions _ =
-    onSlashPress
-
-
-batchSize : number
-batchSize =
-    10
-
-
-promptId : String
-promptId =
-    "prompt"
+    Ports.onWindowScroll (\_ -> WindowScroll)
 
 
 type alias Model =
@@ -126,11 +102,33 @@ type Msg
     | UpdateAlias String
     | UrlRequest UrlRequest
     | UrlChange Url
+    | GotViewport Browser.Dom.Viewport
+    | WindowScroll
+
+
+scrollTreshold : Float
+scrollTreshold =
+    150
+
+
+viewMoreIfNeeded : Cmd Msg
+viewMoreIfNeeded =
+    Task.perform GotViewport Browser.Dom.getViewport
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        WindowScroll ->
+            ( model, viewMoreIfNeeded )
+
+        GotViewport { scene, viewport } ->
+            if viewport.y + viewport.height + scrollTreshold >= scene.height then
+                update LoadMore model
+
+            else
+                ( model, Cmd.none )
+
         UrlRequest (Browser.Internal url) ->
             ( model
             , Nav.pushUrl model.key (Url.toString url)
@@ -172,7 +170,7 @@ update msg model =
                                 | prompt = parsedUrl
                                 , parseResult = Just <| Err ( parsedUrl, e )
                             }
-            , Cmd.none
+            , viewMoreIfNeeded
             )
 
         Input s ->
@@ -245,26 +243,29 @@ update msg model =
 -- View
 
 
-view : Model -> Browser.Document Msg
-view model =
+viewDocument : Model -> Browser.Document Msg
+viewDocument model =
     { title = "Lambda calculus interpreter"
-    , body =
-        [ H.div [ class "max-w-6xl w-full mx-auto px-2 py-6" ]
-            [ Lazy.lazy viewAliases model.aliases
-            , Lazy.lazy viewPrompt model.prompt
-            , H.div [ class "m-4" ] []
-            , case model.parseResult of
-                Nothing ->
-                    viewHelp
-
-                Just (Ok ( batch, continuation )) ->
-                    Lazy.lazy3 viewReductions batch continuation model.expanded
-
-                Just (Err ( term, err )) ->
-                    Lazy.lazy2 viewError term err
-            ]
-        ]
+    , body = [ Lazy.lazy view model ]
     }
+
+
+view : Model -> Html Msg
+view model =
+    H.div [ class "max-w-6xl w-full mx-auto px-2 py-6" ]
+        [ Lazy.lazy viewAliases model.aliases
+        , Lazy.lazy viewPrompt model.prompt
+        , H.div [ class "m-4" ] []
+        , case model.parseResult of
+            Nothing ->
+                viewHelp
+
+            Just (Ok ( batch, continuation )) ->
+                Lazy.lazy3 viewReductions batch continuation model.expanded
+
+            Just (Err ( term, err )) ->
+                Lazy.lazy2 viewError term err
+        ]
 
 
 viewAliases : List ( String, Lambda ) -> Html Msg
@@ -283,20 +284,8 @@ viewReductions batch continuation expanded =
         viewReduction_ i r =
             H.map ((|>) i) (Lazy.lazy2 viewReduction (not <| Set.member i expanded) r)
     in
-    H.div []
-        [ H.div [ class "space-y-2" ]
-            (batch |> List.indexedMap viewReduction_)
-        , when (continuation /= Nothing) <|
-            H.div [ class "my-5" ]
-                [ H.div [ class "flex justify-center w-full" ]
-                    [ H.button
-                        [ class "text-gray-800 bg-indigo-100 rounded shadow px-4 py-3 leading-none tracking-wide"
-                        , E.onClick LoadMore
-                        ]
-                        [ H.text "Load more" ]
-                    ]
-                ]
-        ]
+    H.div [ class "space-y-2" ]
+        (batch |> List.indexedMap viewReduction_)
 
 
 problemToString : Parser.Problem -> String
@@ -492,7 +481,7 @@ viewPrompt value =
                 , E.onInput Input
                 , class "w-full text-gray-800 flex-1 bg-transparent leading-none py-2 px-2 bg-cool-gray-100 rounded"
                 , class "focus:outline-none focus:shadow-outline focus:border-blue-300"
-                , A.placeholder "Enter lambda term. (\"/\" to focus)"
+                , A.placeholder "Enter lambda term."
                 , A.autofocus True
                 , A.type_ "text"
                 , A.attribute "autocapitalize" "none"
@@ -556,6 +545,20 @@ viewReduction collapsed ( l, t ) =
                     _ ->
                         []
         ]
+
+
+
+-- Constants
+
+
+batchSize : number
+batchSize =
+    20
+
+
+promptId : String
+promptId =
+    "prompt"
 
 
 

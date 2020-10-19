@@ -1,5 +1,9 @@
 import { Elm } from './Main.elm'
 
-Elm.Main.init({
-  node: document.querySelector('#elm-root'),
+const app = Elm.Main.init({
+  node: document.getElementById('elm-root'),
+})
+
+window.addEventListener('scroll', () => {
+  app.ports.onWindowScroll.send(null)
 })
