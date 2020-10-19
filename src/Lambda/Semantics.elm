@@ -25,34 +25,6 @@ firstNotFree var term =
         firstNotFree (var ++ "'") term
 
 
-
-{-
-
-    (\x y . x y) (y y y)
-
-   - x is bound in "\y.x y"
-
-   subst "x" "y y y" "\y.x" =>
-   \y'.y
-
-   (\y.x y)[y y y/x]
-
-   - y is bound in "y y y"
-
-   =>
-   (\y'.x y')[y y y/x]
-   =>
-   (\y'.x y')[y y y/x]
-
-
-
--}
-{-
-   if False is returned, an alpha-conversion was performed instead of the requested substitions
--}
---  (λx. k (\ y.x ) (\ y.x ) ) y
-
-
 subst : String -> Lambda -> Lambda -> ( Lambda, Maybe ( Lambda, Lambda ) )
 subst from to term =
     case term of
@@ -101,10 +73,6 @@ type ReductionType
     | AlphaConversion Lambda Lambda
 
 
-
--- TODO: implement different semantics
-
-
 reduction : Lambda -> Maybe ( Lambda, ReductionType )
 reduction term =
     case term of
@@ -132,14 +100,8 @@ reduction term =
             Nothing
 
 
-
--- TODO: limit to n
-
-
 type alias Reductions =
-    { batch : List ( Lambda, ReductionType )
-    , continuation : Maybe Lambda
-    }
+    ( List ( Lambda, ReductionType ), Maybe Lambda )
 
 
 {-| Returns a batch of "limit" reductions, and an optional continuation
@@ -147,69 +109,13 @@ type alias Reductions =
 reductions : Int -> Lambda -> Reductions
 reductions limit lambda =
     if limit <= 0 then
-        Reductions [] (Just lambda)
+        ( [], Nothing )
 
     else
         case reduction lambda of
             Nothing ->
-                Reductions [] Nothing
+                ( [], Nothing )
 
             Just (( ast, _ ) as reduction_) ->
-                let
-                    { batch, continuation } =
-                        reductions (limit - 1) ast
-                in
-                Reductions (reduction_ :: batch) continuation
-
-
-
-{-
-   reduction : Lambda -> Lambda
-   reduction term =
-       case term of
-           Application (Abstraction binding body) arg ->
-               subst binding arg body
-           Application f x ->
-               Application (reduction f) (reduction x)
-           Abstraction binding body ->
-               Abstraction binding (reduction body)
-           Variable _ ->
-               term
--}
-{-
-
-   subst : String -> Lambda -> Lambda -> Lambda
-   subst from to term =
-       case term of
-           Application f x ->
-               Application (subst from to f) (subst from to x)
-
-           Variable var1 ->
-               if from == var1 then
-                   to
-
-               else
-                   term
-
-           Abstraction binding body ->
-               if from == binding then
-                   term
-
-               else
-                   let
-                       newBinding =
-                           firstNotFree binding to
-
-                       rebind =
-                           if binding == newBinding then
-                               identity
-
-                           else
-                               subst binding (Variable newBinding)
-                   in
-                   Abstraction newBinding <|
-                       (body
-                           |> rebind
-                           |> subst from to
-                       )
--}
+                reductions (limit - 1) ast
+                    |> Tuple.mapFirst ((::) reduction_)

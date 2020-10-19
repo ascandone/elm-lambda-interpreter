@@ -108,13 +108,9 @@ updateStr : String -> Model -> Model
 updateStr str model =
     case parse (Dict.fromList model.aliases) str of
         Ok (Lambda term) ->
-            let
-                { batch, continuation } =
-                    reductions batchSize term
-            in
             { model
                 | prompt = str
-                , term = Just <| Ok <| Reductions (( term, Initial ) :: batch) continuation
+                , term = Just <| Ok <| Tuple.mapFirst ((::) ( term, Initial )) (reductions batchSize term)
             }
 
         Ok (Declaration name term) ->
@@ -198,17 +194,10 @@ update msg model =
 
         LoadMore ->
             ( case model.term of
-                Just (Ok { batch, continuation }) ->
-                    case continuation of
-                        Just continuation_ ->
-                            let
-                                reductions_ =
-                                    reductions batchSize continuation_
-                            in
-                            { model | term = Just <| Ok <| Reductions (batch ++ reductions_.batch) reductions_.continuation }
-
-                        Nothing ->
-                            model
+                Just (Ok ( batch, Just continuation )) ->
+                    { model
+                        | term = Just <| Ok <| Tuple.mapFirst ((++) batch) (reductions batchSize continuation)
+                    }
 
                 _ ->
                     model
@@ -276,7 +265,7 @@ view model =
                 Nothing ->
                     viewHelp
 
-                Just (Ok { batch, continuation }) ->
+                Just (Ok ( batch, continuation )) ->
                     let
                         viewReduction_ i r =
                             H.map ((|>) i) (viewReduction (not <| Set.member i model.collapsed) r)
