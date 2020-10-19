@@ -392,24 +392,26 @@ viewHelp =
                 H.li []
                     [ H.text (name ++ ": ")
                     , H.a
-                        [ class "underline text-blue-700 font-bold font-mono cursor-pointer"
+                        [ class "underline text-blue-600 font-semibold font-mono cursor-pointer"
                         , A.href <| Url.Builder.toQuery [ Url.Builder.string "term" value ]
                         ]
                         [ H.text value ]
                     ]
           in
           H.ul [ class "text-gray-600 list-disc space-y-1" ]
-            [ viewExample "Identity" "\\x.x"
+            [ viewExample "Simple term" "(\\x y.x) y"
             , viewExample "Non-terminating" "(\\x.x x) (\\x. x x)"
-            , viewExample "Let statement" "let K = \\x y. y"
-            , viewExample "Using let value" "K a b"
+            , viewExample "You can define aliases" "let Id = \\x. x"
+            , viewExample "And use them" "Id k"
+            , viewExample "Booleans" "True a b"
+            , viewExample "Church numerals" "0 a b"
             ]
         , H.div [ class "mt-8" ] []
-        , H.h3 [ class "text-gray-600 text-base font-semibold" ] [ H.text "Grammar: (TODO: complete)" ]
-        , H.div [ class "mt-2" ] []
-        , H.pre
-            [ class "text-gray-600 font-light overflow-x-auto" ]
-            [ H.text grammar ]
+
+        -- , H.h3 [ class "text-gray-600 text-base font-semibold" ] [ H.text "Grammar: (TODO: complete)" ]
+        -- , H.div [ class "mt-2" ] []
+        -- , H.pre [ class "text-gray-600 font-light overflow-x-auto" ]
+        --     [ H.text grammar ]
         ]
 
 
