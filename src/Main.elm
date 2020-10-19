@@ -9,6 +9,7 @@ import FeatherIcons
 import Html as H exposing (Html, input)
 import Html.Attributes as A exposing (class, classList)
 import Html.Events as E
+import Html.Lazy as Lazy
 import Lambda.Ast as Ast exposing (Lambda)
 import Lambda.Parser exposing (ParseError(..), ParseResult(..), parse)
 import Lambda.Semantics exposing (ReductionType(..), Reductions, reductions)
@@ -17,7 +18,7 @@ import Set exposing (Set)
 import Task
 import Url exposing (Url)
 import Url.Builder
-import Url.Parser exposing ((<?>))
+import Url.Parser
 import Url.Parser.Query as Query
 
 
@@ -249,35 +250,53 @@ view model =
     { title = "Lambda calculus interpreter"
     , body =
         [ H.div [ class "max-w-6xl w-full mx-auto px-2 py-6" ]
-            [ when (not <| List.isEmpty model.aliases) <|
-                H.div [ class "space-y-4 pb-4" ]
-                    (model.aliases
-                        |> List.map viewDeclaration
-                        |> List.reverse
-                    )
-            , viewPrompt model.prompt
+            [ Lazy.lazy viewAliases model.aliases
+            , Lazy.lazy viewPrompt model.prompt
             , H.div [ class "m-4" ] []
             , case model.parseResult of
                 Nothing ->
                     viewHelp
 
                 Just (Ok ( batch, continuation )) ->
-                    let
-                        viewReduction_ i r =
-                            H.map ((|>) i) (viewReduction (not <| Set.member i model.expanded) r)
-                    in
-                    H.div []
-                        [ H.div [ class "space-y-2" ]
-                            (batch |> List.indexedMap viewReduction_)
-                        , when (continuation /= Nothing) <|
-                            H.div [ class "my-5" ] [ loadBtn ]
-                        ]
+                    Lazy.lazy3 viewReductions batch continuation model.expanded
 
                 Just (Err ( term, err )) ->
-                    viewError term err
+                    Lazy.lazy2 viewError term err
             ]
         ]
     }
+
+
+viewAliases : List ( String, Lambda ) -> Html Msg
+viewAliases aliases =
+    when (not <| List.isEmpty aliases) <|
+        H.div [ class "space-y-4 pb-4" ]
+            (aliases
+                |> List.map viewDeclaration
+                |> List.reverse
+            )
+
+
+viewReductions : List ( Lambda, ReductionType ) -> Maybe Lambda -> Set Int -> Html Msg
+viewReductions batch continuation expanded =
+    let
+        viewReduction_ i r =
+            H.map ((|>) i) (Lazy.lazy2 viewReduction (not <| Set.member i expanded) r)
+    in
+    H.div []
+        [ H.div [ class "space-y-2" ]
+            (batch |> List.indexedMap viewReduction_)
+        , when (continuation /= Nothing) <|
+            H.div [ class "my-5" ]
+                [ H.div [ class "flex justify-center w-full" ]
+                    [ H.button
+                        [ class "text-gray-800 bg-indigo-100 rounded shadow px-4 py-3 leading-none tracking-wide"
+                        , E.onClick LoadMore
+                        ]
+                        [ H.text "Load more" ]
+                    ]
+                ]
+        ]
 
 
 problemToString : Parser.Problem -> String
@@ -536,17 +555,6 @@ viewReduction collapsed ( l, t ) =
 
                     _ ->
                         []
-        ]
-
-
-loadBtn : Html Msg
-loadBtn =
-    H.div [ class "flex justify-center w-full" ]
-        [ H.button
-            [ class "text-gray-800 bg-indigo-100 rounded shadow px-4 py-3 leading-none tracking-wide"
-            , E.onClick LoadMore
-            ]
-            [ H.text "Load more" ]
         ]
 
 
