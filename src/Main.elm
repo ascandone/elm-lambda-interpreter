@@ -70,16 +70,6 @@ type alias Model =
     }
 
 
-parseTermQuery : Url -> Maybe String
-parseTermQuery url =
-    case Url.Parser.parse (Url.Parser.query <| Query.string "term") url of
-        Just m ->
-            m
-
-        _ ->
-            Nothing
-
-
 init : Flags -> Url -> Key -> ( Model, Cmd Msg )
 init _ url key =
     update (UrlChange url)
@@ -144,14 +134,8 @@ update msg model =
                 model_ =
                     { model | expanded = Set.empty }
             in
-            ( case parseTermQuery url of
-                Nothing ->
-                    { model_
-                        | prompt = ""
-                        , parseResult = Nothing
-                    }
-
-                Just parsedUrl ->
+            ( case Url.Parser.parse (Url.Parser.query <| Query.string "term") url of
+                Just (Just parsedUrl) ->
                     case parse (Dict.fromList model_.aliases) parsedUrl of
                         Ok (Lambda term) ->
                             { model_
@@ -170,6 +154,12 @@ update msg model =
                                 | prompt = parsedUrl
                                 , parseResult = Just <| Err ( parsedUrl, e )
                             }
+
+                _ ->
+                    { model_
+                        | prompt = ""
+                        , parseResult = Nothing
+                    }
             , viewMoreIfNeeded
             )
 
