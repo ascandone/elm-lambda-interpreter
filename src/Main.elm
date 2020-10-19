@@ -31,7 +31,6 @@ import Url.Parser.Query as Query
        * animation on "LoadMore"
 
    # Major
-       * sync with url
        * change paths/semantics
 
     # Docs
@@ -89,7 +88,7 @@ type alias Model =
     { prompt : String
     , parseResult : Maybe (Result ( String, ParseError ) Reductions)
     , aliases : List ( String, Lambda )
-    , collapsed : Set Int
+    , expanded : Set Int
     , key : Nav.Key
     }
 
@@ -104,51 +103,15 @@ parseTermQuery url =
             Nothing
 
 
-updateStr : String -> Model -> Model
-updateStr str model =
-    case parse (Dict.fromList model.aliases) str of
-        Ok (Lambda term) ->
-            { model
-                | prompt = str
-                , parseResult = Just <| Ok <| Tuple.mapFirst ((::) ( term, Initial )) (reductions batchSize term)
-            }
-
-        Ok (Declaration name term) ->
-            { model
-                | aliases = model.aliases ++ [ ( name, term ) ]
-            }
-
-        Err e ->
-            { model
-                | prompt = str
-                , parseResult = Just <| Err ( str, e )
-            }
-
-
-updateUrl : Url -> Model -> Model
-updateUrl url model =
-    case parseTermQuery url of
-        Nothing ->
-            { model
-                | prompt = ""
-                , parseResult = Nothing
-            }
-
-        Just parsedUrl ->
-            updateStr parsedUrl model
-
-
 init : Flags -> Url -> Key -> ( Model, Cmd Msg )
 init _ url key =
-    ( updateUrl url
+    update (UrlChange url)
         { prompt = ""
         , parseResult = Nothing
         , aliases = []
-        , collapsed = Set.empty
+        , expanded = Set.empty
         , key = key
         }
-    , Cmd.none
-    )
 
 
 type Msg
@@ -168,7 +131,7 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         UrlRequest (Browser.Internal url) ->
-            ( updateUrl url model
+            ( model
             , Nav.pushUrl model.key (Url.toString url)
             )
 
@@ -178,7 +141,36 @@ update msg model =
             )
 
         UrlChange url ->
-            ( updateUrl url model
+            let
+                model_ =
+                    { model | expanded = Set.empty }
+            in
+            ( case parseTermQuery url of
+                Nothing ->
+                    { model_
+                        | prompt = ""
+                        , parseResult = Nothing
+                    }
+
+                Just parsedUrl ->
+                    case parse (Dict.fromList model_.aliases) parsedUrl of
+                        Ok (Lambda term) ->
+                            { model_
+                                | prompt = parsedUrl
+                                , parseResult = Just <| Ok <| Tuple.mapFirst ((::) ( term, Initial )) (reductions batchSize term)
+                            }
+
+                        Ok (Declaration name term) ->
+                            { model_
+                                | aliases = ( name, term ) :: List.filter (\( name1, _ ) -> name1 /= name) model_.aliases
+                                , prompt = ""
+                            }
+
+                        Err e ->
+                            { model_
+                                | prompt = parsedUrl
+                                , parseResult = Just <| Err ( parsedUrl, e )
+                            }
             , Cmd.none
             )
 
@@ -188,9 +180,13 @@ update msg model =
             )
 
         ParsePrompt ->
-            ( updateStr model.prompt model
-            , Nav.pushUrl model.key (Url.Builder.toQuery [ Url.Builder.string "term" model.prompt ])
-            )
+            if String.isEmpty model.prompt then
+                ( model, Cmd.none )
+
+            else
+                ( { model | prompt = "" }
+                , Nav.pushUrl model.key (Url.Builder.toQuery [ Url.Builder.string "term" model.prompt ])
+                )
 
         LoadMore ->
             ( case model.parseResult of
@@ -209,12 +205,12 @@ update msg model =
 
         ToggleCollapse i ->
             ( { model
-                | collapsed =
-                    if Set.member i model.collapsed then
-                        Set.remove i model.collapsed
+                | expanded =
+                    if Set.member i model.expanded then
+                        Set.remove i model.expanded
 
                     else
-                        Set.insert i model.collapsed
+                        Set.insert i model.expanded
               }
             , Cmd.none
             )
@@ -268,7 +264,7 @@ view model =
                 Just (Ok ( batch, continuation )) ->
                     let
                         viewReduction_ i r =
-                            H.map ((|>) i) (viewReduction (not <| Set.member i model.collapsed) r)
+                            H.map ((|>) i) (viewReduction (not <| Set.member i model.expanded) r)
                     in
                     H.div []
                         [ H.div [ class "space-y-2" ]
