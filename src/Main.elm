@@ -87,7 +87,7 @@ promptId =
 
 type alias Model =
     { prompt : String
-    , term : Maybe (Result ( String, ParseError ) Reductions)
+    , parseResult : Maybe (Result ( String, ParseError ) Reductions)
     , aliases : List ( String, Lambda )
     , collapsed : Set Int
     , key : Nav.Key
@@ -110,7 +110,7 @@ updateStr str model =
         Ok (Lambda term) ->
             { model
                 | prompt = str
-                , term = Just <| Ok <| Tuple.mapFirst ((::) ( term, Initial )) (reductions batchSize term)
+                , parseResult = Just <| Ok <| Tuple.mapFirst ((::) ( term, Initial )) (reductions batchSize term)
             }
 
         Ok (Declaration name term) ->
@@ -121,7 +121,7 @@ updateStr str model =
         Err e ->
             { model
                 | prompt = str
-                , term = Just <| Err ( str, e )
+                , parseResult = Just <| Err ( str, e )
             }
 
 
@@ -131,7 +131,7 @@ updateUrl url model =
         Nothing ->
             { model
                 | prompt = ""
-                , term = Nothing
+                , parseResult = Nothing
             }
 
         Just parsedUrl ->
@@ -142,7 +142,7 @@ init : Flags -> Url -> Key -> ( Model, Cmd Msg )
 init _ url key =
     ( updateUrl url
         { prompt = ""
-        , term = Nothing
+        , parseResult = Nothing
         , aliases = []
         , collapsed = Set.empty
         , key = key
@@ -193,10 +193,10 @@ update msg model =
             )
 
         LoadMore ->
-            ( case model.term of
+            ( case model.parseResult of
                 Just (Ok ( batch, Just continuation )) ->
                     { model
-                        | term = Just <| Ok <| Tuple.mapFirst ((++) batch) (reductions batchSize continuation)
+                        | parseResult = Just <| Ok <| Tuple.mapFirst ((++) batch) (reductions batchSize continuation)
                     }
 
                 _ ->
@@ -261,7 +261,7 @@ view model =
                     )
             , viewPrompt model.prompt
             , H.div [ class "m-4" ] []
-            , case model.term of
+            , case model.parseResult of
                 Nothing ->
                     viewHelp
 
