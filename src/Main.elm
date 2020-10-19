@@ -87,33 +87,70 @@ promptId =
 
 type alias Model =
     { prompt : String
-    , reductions : Result ( String, ParseError ) Reductions
+    , term : Maybe (Result ( String, ParseError ) Reductions)
     , aliases : List ( String, Lambda )
     , collapsed : Set Int
     , key : Nav.Key
     }
 
 
-parseTermQuery : Url -> String
+parseTermQuery : Url -> Maybe String
 parseTermQuery url =
     case Url.Parser.parse (Url.Parser.query <| Query.string "term") url of
-        Just (Just t) ->
-            t
+        Just m ->
+            m
 
         _ ->
-            ""
+            Nothing
+
+
+updateStr : String -> Model -> Model
+updateStr str model =
+    case parse (Dict.fromList model.aliases) str of
+        Ok (Lambda term) ->
+            let
+                { batch, continuation } =
+                    reductions batchSize term
+            in
+            { model
+                | prompt = str
+                , term = Just <| Ok <| Reductions (( term, Initial ) :: batch) continuation
+            }
+
+        Ok (Declaration name term) ->
+            { model
+                | aliases = model.aliases ++ [ ( name, term ) ]
+            }
+
+        Err e ->
+            { model
+                | prompt = str
+                , term = Just <| Err ( str, e )
+            }
+
+
+updateUrl : Url -> Model -> Model
+updateUrl url model =
+    case parseTermQuery url of
+        Nothing ->
+            { model
+                | prompt = ""
+                , term = Nothing
+            }
+
+        Just parsedUrl ->
+            updateStr parsedUrl model
 
 
 init : Flags -> Url -> Key -> ( Model, Cmd Msg )
 init _ url key =
-    ( Tuple.first <|
-        update ParsePrompt
-            { prompt = parseTermQuery url
-            , reductions = Ok (Reductions [] Nothing)
-            , aliases = []
-            , collapsed = Set.empty
-            , key = key
-            }
+    ( updateUrl url
+        { prompt = ""
+        , term = Nothing
+        , aliases = []
+        , collapsed = Set.empty
+        , key = key
+        }
     , Cmd.none
     )
 
@@ -127,7 +164,6 @@ type Msg
     | Noop
     | DeleteAlias String
     | UpdateAlias String
-    | ClickedExample String
     | UrlRequest UrlRequest
     | UrlChange Url
 
@@ -136,8 +172,7 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         UrlRequest (Browser.Internal url) ->
-            ( Tuple.first <|
-                update ParsePrompt { model | prompt = parseTermQuery url }
+            ( updateUrl url model
             , Nav.pushUrl model.key (Url.toString url)
             )
 
@@ -147,68 +182,37 @@ update msg model =
             )
 
         UrlChange url ->
-            ( Tuple.first <|
-                update ParsePrompt { model | prompt = parseTermQuery url }
+            ( updateUrl url model
             , Cmd.none
             )
 
         Input s ->
-            -- TODO: reductions = Nothing ?
-            ( { model
-                | prompt = s
-
-                --  , reductions = Ok (Reductions [] Nothing)
-              }
+            ( { model | prompt = s }
             , Cmd.none
             )
 
+        ParsePrompt ->
+            ( updateStr model.prompt model
+            , Nav.pushUrl model.key (Url.Builder.toQuery [ Url.Builder.string "term" model.prompt ])
+            )
+
         LoadMore ->
-            ( case model.reductions of
-                Ok { batch, continuation } ->
+            ( case model.term of
+                Just (Ok { batch, continuation }) ->
                     case continuation of
                         Just continuation_ ->
                             let
                                 reductions_ =
                                     reductions batchSize continuation_
                             in
-                            { model | reductions = Ok <| Reductions (batch ++ reductions_.batch) reductions_.continuation }
+                            { model | term = Just <| Ok <| Reductions (batch ++ reductions_.batch) reductions_.continuation }
 
-                        _ ->
+                        Nothing ->
                             model
 
                 _ ->
                     model
             , Cmd.none
-            )
-
-        ParsePrompt ->
-            ( if String.isEmpty model.prompt then
-                { model | reductions = Ok <| Reductions [] Nothing }
-
-              else
-                case parse (Dict.fromList model.aliases) model.prompt of
-                    Ok (Lambda lambda) ->
-                        Tuple.first <|
-                            update LoadMore
-                                { model
-                                    | reductions = Ok <| Reductions [ ( lambda, Initial ) ] (Just lambda)
-                                    , collapsed = Set.empty
-                                }
-
-                    Ok (Declaration name value) ->
-                        { model
-                            | aliases = ( name, value ) :: (.aliases <| Tuple.first <| update (DeleteAlias name) model)
-                            , prompt = ""
-                        }
-
-                    Err e ->
-                        { model | reductions = Err ( model.prompt, e ) }
-            , Cmd.none
-            )
-
-        FocusPrompt ->
-            ( model
-            , Task.attempt (\_ -> Noop) (Browser.Dom.focus promptId)
             )
 
         ToggleCollapse 0 ->
@@ -242,11 +246,10 @@ update msg model =
                 Nothing ->
                     ( model, Cmd.none )
 
-        ClickedExample value ->
-            model
-                |> update (Input value)
-                |> Tuple.first
-                |> update ParsePrompt
+        FocusPrompt ->
+            ( model
+            , Task.attempt (\_ -> Noop) (Browser.Dom.focus promptId)
+            )
 
         Noop ->
             ( model, Cmd.none )
@@ -254,6 +257,42 @@ update msg model =
 
 
 -- View
+
+
+view : Model -> Browser.Document Msg
+view model =
+    { title = "Lambda calculus interpreter"
+    , body =
+        [ H.div [ class "max-w-6xl w-full mx-auto px-2 py-6" ]
+            [ when (not <| List.isEmpty model.aliases) <|
+                H.div [ class "space-y-4 pb-4" ]
+                    (model.aliases
+                        |> List.map viewDeclaration
+                        |> List.reverse
+                    )
+            , viewPrompt model.prompt
+            , H.div [ class "m-4" ] []
+            , case model.term of
+                Nothing ->
+                    viewHelp
+
+                Just (Ok { batch, continuation }) ->
+                    let
+                        viewReduction_ i r =
+                            H.map ((|>) i) (viewReduction (not <| Set.member i model.collapsed) r)
+                    in
+                    H.div []
+                        [ H.div [ class "space-y-2" ]
+                            (batch |> List.indexedMap viewReduction_)
+                        , when (continuation /= Nothing) <|
+                            H.div [ class "my-5" ] [ loadBtn ]
+                        ]
+
+                Just (Err ( term, err )) ->
+                    viewError term err
+            ]
+        ]
+    }
 
 
 problemToString : Parser.Problem -> String
@@ -368,10 +407,11 @@ viewHelp =
         , let
             viewExample name value =
                 H.li []
-                    [ H.text name
-                    , H.text ": "
-                    , H.code
-                        [ class "underline text-blue-500 font-bold cursor-pointer", E.onClick <| ClickedExample value ]
+                    [ H.text (name ++ ": ")
+                    , H.a
+                        [ class "underline text-blue-700 font-bold font-mono cursor-pointer"
+                        , A.href <| Url.Builder.toQuery [ Url.Builder.string "term" value ]
+                        ]
                         [ H.text value ]
                     ]
           in
@@ -381,22 +421,6 @@ viewHelp =
             , viewExample "Let statement" "let K = \\x y. y"
             , viewExample "Using let value" "K a b"
             ]
-        , H.a
-            [ class "cursor-pointer underline block text-blue-700"
-            , A.href <|
-                Url.Builder.toQuery [ Url.Builder.string "term" "\\x y. y" ]
-            ]
-            [ H.text "/?term=\\x y. y" ]
-        , H.a
-            [ class "cursor-pointer underline block text-blue-700"
-            , A.href "/"
-            ]
-            [ H.text "/" ]
-        , H.a
-            [ class "cursor-pointer underline block text-blue-700"
-            , A.href "https://www.google.it"
-            ]
-            [ H.text "google" ]
         , H.div [ class "mt-8" ] []
         , H.h3 [ class "text-gray-600 text-base font-semibold" ] [ H.text "Grammar: (TODO: complete)" ]
         , H.div [ class "mt-2" ] []
@@ -404,44 +428,6 @@ viewHelp =
             [ class "text-gray-600 font-light overflow-x-auto" ]
             [ H.text grammar ]
         ]
-
-
-view : Model -> Browser.Document Msg
-view model =
-    { title = "Lambda calculus interpreter"
-    , body =
-        [ H.div [ class "max-w-6xl w-full mx-auto px-2 py-6" ]
-            [ when (not <| List.isEmpty model.aliases) <|
-                H.div [ class "space-y-4 pb-4" ]
-                    (model.aliases
-                        |> List.map viewDeclaration
-                        |> List.reverse
-                    )
-            , viewPrompt model.prompt
-            , H.div [ class "m-4" ] []
-            , case model.reductions of
-                Err ( s, e ) ->
-                    viewError s e
-
-                Ok { batch, continuation } ->
-                    case batch of
-                        [] ->
-                            viewHelp
-
-                        _ ->
-                            let
-                                viewReduction_ i r =
-                                    H.map ((|>) i) (viewReduction (not <| Set.member i model.collapsed) r)
-                            in
-                            H.div []
-                                [ H.div [ class "space-y-2" ]
-                                    (batch |> List.indexedMap viewReduction_)
-                                , when (continuation /= Nothing) <|
-                                    H.div [ class "my-5" ] [ loadBtn ]
-                                ]
-            ]
-        ]
-    }
 
 
 viewDeclaration : ( String, Lambda ) -> Html Msg

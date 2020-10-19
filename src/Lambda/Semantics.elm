@@ -142,6 +142,8 @@ type alias Reductions =
     }
 
 
+{-| Returns a batch of "limit" reductions, and an optional continuation
+-}
 reductions : Int -> Lambda -> Reductions
 reductions limit lambda =
     if limit <= 0 then
