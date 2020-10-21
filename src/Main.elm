@@ -6,7 +6,7 @@ import Browser.Events
 import Browser.Navigation as Nav exposing (Key)
 import Dict
 import FeatherIcons
-import Html as H exposing (Html, input)
+import Html as H exposing (Attribute, Html, input)
 import Html.Attributes as A exposing (class, classList)
 import Html.Events as E
 import Html.Lazy as Lazy
@@ -33,9 +33,6 @@ import Url.Parser.Query as Query
 
    # Major
        * change paths/semantics
-
-    # Docs
-        * finish grammar
 
 -}
 
@@ -359,7 +356,6 @@ grammar =
     := <assignment>
     | <lambda-expr>
 
-// You can perform let bindings
 <assignment>
     := let <alias-identifier> = <lambda-expr>
 
@@ -369,21 +365,29 @@ grammar =
 
 <applications>
     := <identifier>
+    | <number>
+    | <alias-identifier>
+    | ( <applications> )
+    | ( <abstraction> )
+    | <applications> <applications>
 
+<number> := 0 | 1 | ...
 
 // You can also use "\\" instead of "λ"
 <abstraction>
-    := λ <abstraction-bindings>
+    := λ <abstraction'>
 
-<abstraction-bindings>
+<abstraction'>
     := <identifier> <abstraction-bindings>
     | <identifier> . <lambda-expr>
+
+// <alias-identifier> must start with an uppercase char
 """
 
 
 viewHelp : Html Msg
 viewHelp =
-    H.div [ class "max-w-4xl mx-auto px-4" ]
+    H.div [ class "max-w-6xl mx-auto px-4" ]
         [ H.div [ class "mt-8" ] []
         , H.h3 [ class "text-gray-600 text-base font-semibold" ] [ H.text "Examples" ]
         , H.div [ class "mt-2" ] []
@@ -392,7 +396,7 @@ viewHelp =
                 H.li []
                     [ H.text (name ++ ": ")
                     , H.a
-                        [ class "underline text-blue-600 font-semibold font-mono cursor-pointer"
+                        [ styles.link
                         , A.href <| Url.Builder.toQuery [ Url.Builder.string "term" value ]
                         ]
                         [ H.text value ]
@@ -403,15 +407,15 @@ viewHelp =
             , viewExample "Non-terminating" "(\\x.x x) (\\x. x x)"
             , viewExample "You can define aliases" "let Id = \\x. x"
             , viewExample "And use them" "Id k"
-            , viewExample "Booleans" "True a b"
+            , viewExample "Church booleans" "True a b"
             , viewExample "Church numerals" "0 a b"
             ]
         , H.div [ class "mt-8" ] []
-
-        -- , H.h3 [ class "text-gray-600 text-base font-semibold" ] [ H.text "Grammar: (TODO: complete)" ]
-        -- , H.div [ class "mt-2" ] []
-        -- , H.pre [ class "text-gray-600 font-light overflow-x-auto" ]
-        --     [ H.text grammar ]
+        , H.h3 [ class "text-gray-600 text-base font-semibold" ] [ H.text "Grammar" ]
+        , H.div [ class "mt-2" ] []
+        , H.pre [ class "text-gray-600 overflow-x-auto" ] [ H.text grammar ]
+        , H.div [ class "mt-8" ] []
+        , H.a [ styles.link, A.href "https://github.com/ascandone/elm-lambda-interpreter", A.target "_blank" ] [ H.text "Source code on github" ]
         ]
 
 
@@ -564,3 +568,12 @@ when b h =
 
     else
         H.text ""
+
+
+
+-- Styles
+
+
+styles : { link : Attribute msg }
+styles =
+    { link = class "underline text-blue-700 font-semibold font-mono cursor-pointer" }
