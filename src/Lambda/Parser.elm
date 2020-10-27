@@ -46,7 +46,7 @@ desugarLambda aliases rawLambda =
                         acc
 
                     else
-                        Application (Variable f) (helper (n_ - 1) acc)
+                        helper (n_ - 1) (Application (Variable f) acc)
             in
             Ok <| Abstraction f <| Abstraction x <| helper n (Variable x)
 
